@@ -1,0 +1,1035 @@
+# Task: send weekly IC police activity on one's street to that persons email
+# Step 1. Database emails and corresponding addresses
+# Step 2. Check https://www.iowa-city.org/icgovapps/police/activitylog every day and store the Time,
+# (Address), Activity, Disposition, and Details (if any) for the dispatches with the following criteria:
+#           1. The dispatch is on that person's street
+# Step 3. Format the information and email it to the emails in the database
+
+
+
+# CURRENT BUGS
+# - program wont detect cross streets (ex: E Burlington St/S Lucas St
+# - sometimes the email text is purple sometimes not
+# - program caps at 4 matches
+# - have to manually run program every night
+
+
+
+
+
+
+
+
+import smtplib, ssl
+import requests
+from bs4 import BeautifulSoup
+from string import digits
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
+# STEP 1: DATABASE EMAILS AND CORRESPONDING ADDRESSES (throw your friends emails/addresses in if you want, just make sure to run the function at the end with mainProgram(name, whosAddress, whosEmail)
+
+exampleStreet = ' e washington st'      # Defining streetname variables (Space at the beginning because when I am scraping the site for addresses,
+                                # I remove the address numbers but there is still a space at the beginning ex: '123 Gus Court' -> ' Gus Court')
+
+exampleEmail = 'example@gmail.com'  # Defining email variables
+
+
+
+
+# STEP 2: Check https://www.iowa-city.org/icgovapps/police/activitylog every day and store the Date,
+# (Address), Activity, Disposition, and Details (if any) for the dispatches with the following criteria:
+#           1. The dispatch is on that person's street
+
+
+URL = 'https://www.iowa-city.org/icgovapps/police/activitylog'
+page = requests.get(URL)
+soup = BeautifulSoup(page.content, 'html.parser')       # Extracting HTML data from website
+filteredSoup = soup.tbody   # Narrowed html data to only the contents of <tbody></tbody>    # every dispatch in the table is encompassed within a <tr></tr>
+numberOfDispatches = ((len(list(filteredSoup.children)))-1)//2 # number of dispaches  
+
+print('There have been ' + str(numberOfDispatches) + ' dispatches in Iowa City today.')
+
+    # MAIN PROGRAM
+def mainProgram(name,whosStreet,whosEmail):
+
+    
+    addressList = list() # create local lists 
+    timeList = list()
+    activityList = list()
+    dispositionList = list()
+    detailsList = list()
+    
+    dDispatch = filteredSoup.tr.next_sibling.next_sibling # first dispatch 
+    
+    i = 1
+    
+    print('Searching for matches (' + name + ')...')
+    
+           # LOOP: CREATING OBJECTS/ATTRIBUTES FOR EVERY INDIVIDUAL DISPATCH                                    
+    while i <= (numberOfDispatches-1):
+       
+        dAddress = dDispatch.td.next_sibling.next_sibling.string
+        removeDigits = str.maketrans('', '', digits)
+        dAlmostStreet = dAddress.translate(removeDigits) # removes house number (BUT NOT SPACE BEFORE STREET OR CAPITALIZATIONS)
+        dStreet = dAlmostStreet.lower() # makes all characters lowercase
+        
+        if dStreet == whosStreet: # if the street matches, create local lists corresponding to each attribute and append info
+            print('Found one!')
+            dLink = ('https://www.iowa-city.org' + dDispatch.td.a['href']) # link to individual dispatch website
+            dLinkSoup =  BeautifulSoup(requests.get(dLink).content, 'html.parser') # downloading html data from individual dispatch website
+            dFilteredLinkSoup = dLinkSoup.dl # filtering aformentioned html data
+
+            dTime = dFilteredLinkSoup.dd.next_sibling.next_sibling.next_sibling.next_sibling.string # storing dispatch info in variables
+            dActivity = dFilteredLinkSoup.dd.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.string                  
+            dDisposition = dFilteredLinkSoup.dd.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.string
+            dDetails = dFilteredLinkSoup.dd.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.next_sibling.string
+                        
+            addressList.append(dAddress) # appending the dispatch info into corresponding lists
+            timeList.append(dTime)
+            activityList.append(dActivity)
+            dispositionList.append(dDisposition)
+            detailsList.append(dDetails)
+            
+            dDispatch = dDispatch.next_sibling.next_sibling # selecting next dispatch
+            i = i+1
+                        
+        else:
+            dDispatch = dDispatch.next_sibling.next_sibling # selecting next dispatch
+            i = i+1
+
+
+# STEP 3: FORMAT INFO AND SEND TO CORRESPONDING EMAIL
+    
+    
+    #
+    # FOR READERS!!!!!!!!!!!!!!!!!!!! - It is recommended that you create a dedicated gmail for this script.
+    dedicatedGmail = 'put the email addess here'
+    
+    # email/server setup
+    
+    
+    password = input('Please enter your email password: ')  #prompts you for your email password in the terminal so you dont have to save it in your code
+    port = 465 # For SSL
+    senderEmail = dedicatedGmail
+    numberOfMatches = len(addressList)
+    message = MIMEMultipart('alternative')
+    message['Subject'] = 'There has been a police dispatch on your street'
+    message['From'] = senderEmail
+    message['To'] = whosEmail
+
+    
+    if numberOfMatches == 0:
+        print('There are no matches for ' + name + '. Moving on.')
+
+        
+        
+    else:
+
+        
+                    # Writing message based on how many address matches there are (1,2,3,4)
+        if numberOfMatches == 1:
+
+            print('There is (1) match for ' + name + '. Sending email...')
+            # Plain-text message (inserting variables into string with old school % formatting)
+            text = '''\
+            Good afternoon %s,
+
+            You had one police dispatch on your street today.
+
+
+            Dispatch Time:
+            %s
+
+            Activity:
+            %s
+
+            Disposition:
+            %s
+
+            Address:
+            %s
+
+            Details:
+            %s
+            
+            
+            
+            
+            I am iowa city police activity on your street bot.
+            If I do something that im not supposed to, or i am annoying you,
+            please reply with what i did wrong (and 5 compliments).
+            ''' % (name, timeList[0], activityList[0], dispositionList[0], addressList[0], detailsList[0]) #old school inserting variables into string
+
+
+            # HTML version of email
+            html = '''\
+            <html>
+            
+                <body>
+                    <h1>
+                    Good afternoon %s,
+                    </h1>
+                    <h1>
+                    You had <b>one</b> police dispatch on your street today.
+                    </h1>
+
+                    <p>
+                    <b>Dispatch Time:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+
+                    <p>
+                     </p>
+
+                    <p>
+                    <b>Activity:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+
+                    <p>
+                     </p>
+
+                    <p>
+                    <b>Disposition:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+
+                    <p>
+                     </p>
+                     
+                    <p>
+                    <b>Address:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+                    
+                    <p>
+                     </p>
+                     
+                    <p>
+                    <b>Details:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+                    
+                    <p>
+                    ...........................................................
+                     </p>
+                    
+                    <p>
+                    I am iowa city police activity on your street bot.
+                    </p>
+                    <p>
+                    If I do something that im not supposed to, or i am annoying you,
+                    please reply with what i did wrong (and 5 compliments).
+                    </p>
+                </body>
+            </html>
+            ''' % (name, timeList[0], activityList[0], dispositionList[0], addressList[0], detailsList[0]) #old school inserting variables into string
+
+        
+        elif numberOfMatches == 2:
+
+            print('There are (2) matches for ' + name + '. Sending email...')
+            # Plain-text message (inserting variables into string with old school % formatting)
+            text = '''\
+            Good afternoon %s,
+
+            You had two police dispatches on your street today.
+
+
+            Dispatch Time:
+            %s
+
+            Activity:
+            %s
+
+            Disposition:
+            %s
+
+            Address:
+            %s
+
+            Details:
+            %s
+            
+
+
+            Dispatch Time:
+            %s
+
+            Activity:
+            %s
+
+            Disposition:
+            %s
+
+            Address:
+            %s
+
+            Details:
+            %s
+            
+            
+            
+            I am iowa city police activity on your street bot.
+            If I do something that im not supposed to, or i am annoying you,
+            please reply with what i did wrong (and 5 compliments).
+            ''' % (name, timeList[0], activityList[0], dispositionList[0], addressList[0], detailsList[0], timeList[1], activityList[1], dispositionList[1], addressList[1], detailsList[1]) #old school inserting variables into string
+
+
+            # HTML version of email
+            html = '''\
+            <html>
+            
+                <body>
+                    <h1>
+                    Good afternoon %s,
+                    </h1>
+                    <h1>
+                    You had <b>two</b> police dispatches on your street today.
+                    </h1>
+
+                    <p>
+                    <b>Dispatch Time:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+
+                    <p>
+                     </p>
+
+                    <p>
+                    <b>Activity:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+
+                    <p>
+                     </p>
+
+                    <p>
+                    <b>Disposition:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+
+                    <p>
+                     </p>
+                     
+                    <p>
+                    <b>Address:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+                    
+                    <p>
+                     </p>
+                     
+                    <p>
+                    <b>Details:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+                    
+                    <p>
+                    ...........................................................
+                     </p>
+
+
+                     
+                     <p>
+                    <b>Dispatch Time:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+
+                    <p>
+                     </p>
+
+                    <p>
+                    <b>Activity:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+
+                    <p>
+                     </p>
+
+                    <p>
+                    <b>Disposition:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+
+                    <p>
+                     </p>
+                     
+                    <p>
+                    <b>Address:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+                    
+                    <p>
+                     </p>
+                     
+                    <p>
+                    <b>Details:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+                    
+                    <p>
+                    ...........................................................
+                     </p>
+
+
+                    
+                    <p>
+                    I am iowa city police activity on your street bot.
+                    </p>
+                    <p>
+                    If I do something that im not supposed to, or i am annoying you,
+                    please reply with what i did wrong (and 5 compliments).
+                    </p>
+                </body>
+            </html>
+            ''' % (name, timeList[0], activityList[0], dispositionList[0], addressList[0], detailsList[0], timeList[1], activityList[1], dispositionList[1], addressList[1], detailsList[1]) #old school inserting variables into string
+
+        elif numberOfMatches == 3:
+
+            print('There are (3) matches for ' + name + '. Sending email...')
+            # Plain-text message (inserting variables into string with old school % formatting)
+            text = '''\
+            Good afternoon %s,
+
+            You had three police dispatches on your street today.
+
+
+            Dispatch Time:
+            %s
+
+            Activity:
+            %s
+
+            Disposition:
+            %s
+
+            Address:
+            %s
+
+            Details:
+            %s
+            
+
+
+            Dispatch Time:
+            %s
+
+            Activity:
+            %s
+
+            Disposition:
+            %s
+
+            Address:
+            %s
+
+            Details:
+            %s
+            
+
+
+            Dispatch Time:
+            %s
+
+            Activity:
+            %s
+
+            Disposition:
+            %s
+
+            Address:
+            %s
+
+            Details:
+            %s
+            
+            
+            
+            I am iowa city police activity on your street bot.
+            If I do something that im not supposed to, or i am annoying you,
+            please reply with what i did wrong (and 5 compliments).
+            ''' % (name, timeList[0], activityList[0], dispositionList[0], addressList[0], detailsList[0], timeList[1], activityList[1], dispositionList[1], addressList[1], detailsList[1], timeList[2], activityList[2], dispositionList[2], addressList[2], detailsList[2]) #old school inserting variables into string
+
+
+            # HTML version of email
+            html = '''\
+            <html>
+            
+                <body>
+                    <h1>
+                    Good afternoon %s,
+                    </h1>
+                    <h1>
+                    You had <b>three</b> police dispatches on your street today.
+                    </h1>
+
+                    <p>
+                    <b>Dispatch Time:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+
+                    <p>
+                     </p>
+
+                    <p>
+                    <b>Activity:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+
+                    <p>
+                     </p>
+
+                    <p>
+                    <b>Disposition:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+
+                    <p>
+                     </p>
+                     
+                    <p>
+                    <b>Address:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+                    
+                    <p>
+                     </p>
+                     
+                    <p>
+                    <b>Details:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+                    
+                    <p>
+                    ...........................................................
+                     </p>
+
+
+
+                     
+                     <p>
+                    <b>Dispatch Time:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+
+                    <p>
+                     </p>
+
+                    <p>
+                    <b>Activity:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+
+                    <p>
+                     </p>
+
+                    <p>
+                    <b>Disposition:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+
+                    <p>
+                     </p>
+                     
+                    <p>
+                    <b>Address:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+                    
+                    <p>
+                     </p>
+                     
+                    <p>
+                    <b>Details:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+                    
+                    <p>
+                    ...........................................................
+                     </p>
+
+
+
+
+                     
+                     <p>
+                    <b>Dispatch Time:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+
+                    <p>
+                     </p>
+
+                    <p>
+                    <b>Activity:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+
+                    <p>
+                     </p>
+
+                    <p>
+                    <b>Disposition:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+
+                    <p>
+                     </p>
+                     
+                    <p>
+                    <b>Address:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+                    
+                    <p>
+                     </p>
+                     
+                    <p>
+                    <b>Details:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+                    
+                    <p>
+                    ...........................................................
+                     </p>
+
+
+                                        
+                    <p>
+                    I am iowa city police activity on your street bot.
+                    </p>
+                    <p>
+                    If I do something that im not supposed to, or i am annoying you,
+                    please reply with what i did wrong (and 5 compliments).
+                    </p>
+                </body>
+            </html>
+            ''' % (name, timeList[0], activityList[0], dispositionList[0], addressList[0], detailsList[0], timeList[1], activityList[1], dispositionList[1], addressList[1], detailsList[1], timeList[2], activityList[2], dispositionList[2], addressList[2], detailsList[2]) #old school inserting variables into string
+
+
+        elif numberOfMatches >= 4:   #CAP AT 4 DISPATCHES
+
+            print('There are (4) matches for ' + name + '. Sending email...')
+            # Plain-text message (inserting variables into string with old school % formatting)
+            text = '''\
+            Good afternoon %s,
+
+            You had four police dispatches on your street today.
+
+
+            Dispatch Time:
+            %s
+
+            Activity:
+            %s
+
+            Disposition:
+            %s
+
+            Address:
+            %s
+
+            Details:
+            %s
+            
+
+
+            Dispatch Time:
+            %s
+
+            Activity:
+            %s
+
+            Disposition:
+            %s
+
+            Address:
+            %s
+
+            Details:
+            %s
+            
+
+
+            Dispatch Time:
+            %s
+
+            Activity:
+            %s
+
+            Disposition:
+            %s
+
+            Address:
+            %s
+
+            Details:
+            %s
+            
+
+
+            Dispatch Time:
+            %s
+
+            Activity:
+            %s
+
+            Disposition:
+            %s
+
+            Address:
+            %s
+
+            Details:
+            %s
+            
+            
+            I am iowa city police activity on your street bot.
+            If I do something that im not supposed to, or i am annoying you,
+            please reply with what i did wrong (and 5 compliments).
+            ''' % (name, timeList[0], activityList[0], dispositionList[0], addressList[0], detailsList[0], timeList[1], activityList[1], dispositionList[1], addressList[1], detailsList[1], timeList[2], activityList[2], dispositionList[2], addressList[2], detailsList[2],
+                   timeList[3], activityList[3], dispositionList[3], addressList[3], detailsList[3])
+
+
+            # HTML version of email
+            html = '''\
+            <html>
+            
+                <body>
+                    <h1>
+                    Good afternoon %s,
+                    </h1>
+                    <h1>
+                    You had <b>four</b> police dispatches on your street today.
+                    </h1>
+
+                    <p>
+                    <b>Dispatch Time:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+
+                    <p>
+                     </p>
+
+                    <p>
+                    <b>Activity:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+
+                    <p>
+                     </p>
+
+                    <p>
+                    <b>Disposition:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+
+                    <p>
+                     </p>
+                     
+                    <p>
+                    <b>Address:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+                    
+                    <p>
+                     </p>
+                     
+                    <p>
+                    <b>Details:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+                    
+                    <p>
+                    ...........................................................
+                     </p>
+
+
+
+                     
+                     <p>
+                    <b>Dispatch Time:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+
+                    <p>
+                     </p>
+
+                    <p>
+                    <b>Activity:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+
+                    <p>
+                     </p>
+
+                    <p>
+                    <b>Disposition:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+
+                    <p>
+                     </p>
+                     
+                    <p>
+                    <b>Address:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+                    
+                    <p>
+                     </p>
+                     
+                    <p>
+                    <b>Details:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+                    
+                    <p>
+                    ...........................................................
+                     </p>
+
+
+
+
+                     
+                     <p>
+                    <b>Dispatch Time:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+
+                    <p>
+                     </p>
+
+                    <p>
+                    <b>Activity:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+
+                    <p>
+                     </p>
+
+                    <p>
+                    <b>Disposition:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+
+                    <p>
+                     </p>
+                     
+                    <p>
+                    <b>Address:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+                    
+                    <p>
+                     </p>
+                     
+                    <p>
+                    <b>Details:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+                    
+                    <p>
+                    ...........................................................
+                     </p>
+
+
+
+
+                     
+                     <p>
+                    <b>Dispatch Time:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+
+                    <p>
+                     </p>
+
+                    <p>
+                    <b>Activity:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+
+                    <p>
+                     </p>
+
+                    <p>
+                    <b>Disposition:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+
+                    <p>
+                     </p>
+                     
+                    <p>
+                    <b>Address:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+                    
+                    <p>
+                     </p>
+                     
+                    <p>
+                    <b>Details:</b>
+                    </p>
+                    <p>
+                    %s
+                    </p>
+                    
+                    <p>
+                    ...........................................................
+                     </p>
+
+
+
+                                        
+                    <p>
+                    I am iowa city police activity on your street bot.
+                    </p>
+                    <p>
+                    If I do something that im not supposed to, or i am annoying you,
+                    please reply with what i did wrong (and 5 compliments).
+                    </p>
+                </body>
+            </html>
+            ''' % (name, timeList[0], activityList[0], dispositionList[0], addressList[0], detailsList[0], timeList[1], activityList[1], dispositionList[1], addressList[1], detailsList[1], timeList[2], activityList[2], dispositionList[2], addressList[2], detailsList[2],
+                   timeList[3], activityList[3], dispositionList[3], addressList[3], detailsList[3])
+
+        #turning the string data into plain/html MIMEText objects
+        part1 = MIMEText(text, 'plain')
+        part2 = MIMEText(html, 'html')
+
+        # Add HTML/plain-text parts to MIMEMultipart message
+        # The email client will try to render the last part first
+        message.attach(part1)
+        message.attach(part2)
+
+        
+
+        
+        context = ssl.create_default_context() # Create a secure SSL context
+        with smtplib.SMTP_SSL('smtp.gmail.com', port, context=context) as server:
+            server.login(senderEmail, password)
+            server.sendmail(senderEmail, whosEmail, message.as_string()) # Send email
+
+        print('Email sent to ' + name + '.')
+        
+    
+    
+
+
+
+ #run main program
+mainProgram('John Doe', exampleStreet, exampleEmail)
+
+
+
+
+
+
+
+print('All done! Goodnight!')
+
+
+
+
